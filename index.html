@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scanline — ATS Parse Check + Recruiter Read</title>
+<meta name="description" content="A real ATS parseability check plus a recruiter-style read of your resume, matched against a job description.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#FAFAF7;
+    --paper-dim:#F1EFE8;
+    --ink:#1B1F3B;
+    --ink-soft:#565b7a;
+    --accent:#2E7D6B;
+    --accent-dim:#e4efec;
+    --warn:#B8542F;
+    --warn-dim:#f5e8e1;
+    --gold:#A0812E;
+    --line:#D8D5CC;
+    --white:#FFFFFF;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:800px;margin:0 auto;padding:0 24px 100px;}
+  header{
+    padding:56px 0 28px;
+    border-bottom:1px solid var(--line);
+    margin-bottom:40px;
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--accent);
+    margin-bottom:14px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .eyebrow .dot{width:5px;height:5px;border-radius:50%;background:var(--accent);}
+  h1{
+    font-family:'Newsreader', serif;
+    font-weight:600;
+    font-size:44px;
+    line-height:1.08;
+    margin:0 0 16px;
+    letter-spacing:-0.01em;
+  }
+  h1 em{font-style:italic;font-weight:500;color:var(--ink-soft);}
+  .sub{
+    font-size:16px;
+    color:var(--ink-soft);
+    max-width:56ch;
+    line-height:1.55;
+    margin:0;
+  }
+  .panel{
+    background:var(--white);
+    border:1px solid var(--line);
+    border-radius:2px;
+  }
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .field-label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    padding:14px 20px;
+    border-bottom:1px solid var(--line);
+    display:flex;
+    justify-content:space-between;
+  }
+  textarea{
+    width:100%;
+    min-height:240px;
+    border:none;
+    outline:none;
+    resize:vertical;
+    padding:20px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    line-height:1.6;
+    color:var(--ink);
+    background:transparent;
+  }
+  textarea::placeholder{color:#B4B1A6;}
+  .role-input{
+    width:100%;
+    border:none;
+    outline:none;
+    padding:14px 20px;
+    font-family:'IBM Plex Sans', sans-serif;
+    font-size:14px;
+    color:var(--ink);
+    background:transparent;
+  }
+  .role-input::placeholder{color:#B4B1A6;}
+  .actions{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-top:20px;
+    flex-wrap:wrap;
+    gap:12px;
+  }
+  .scan-btn{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    background:var(--ink);
+    color:var(--paper);
+    border:none;
+    padding:14px 28px;
+    border-radius:2px;
+    cursor:pointer;
+    transition:background 0.15s ease;
+  }
+  .scan-btn:hover{background:#2c3161;}
+  .scan-btn:disabled{background:#B4B1A6;cursor:not-allowed;}
+  .hint{font-size:12.5px;color:var(--ink-soft);}
+
+  .scan-area{position:relative;overflow:hidden;margin-top:24px;display:none;}
+  .beam{
+    position:absolute;
+    left:0;right:0;top:0;
+    height:2px;
+    background:linear-gradient(90deg, transparent, var(--accent), transparent);
+    box-shadow:0 0 12px 2px rgba(46,125,107,0.5);
+    display:none;
+  }
+  .beam.active{display:block;animation:sweep 1.4s linear infinite;}
+  @keyframes sweep{0%{top:0;}100%{top:100%;}}
+
+  .layer{margin-top:40px;display:none;}
+  .layer.show{display:block;animation:fadein 0.4s ease;}
+  @keyframes fadein{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+
+  .layer-tag{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin-bottom:10px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .layer-tag .badge{
+    font-size:9.5px;
+    padding:2px 7px;
+    border-radius:10px;
+    letter-spacing:0.06em;
+  }
+  .badge.mechanical{background:var(--accent-dim);color:var(--accent);}
+  .badge.ai{background:var(--warn-dim);color:var(--warn);}
+  .layer-note{
+    font-size:12px;
+    color:var(--ink-soft);
+    margin-bottom:14px;
+    line-height:1.5;
+    max-width:60ch;
+  }
+
+  .report-head{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    padding:24px 24px 20px;
+    border-bottom:1px solid var(--line);
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  .score-num{
+    font-family:'Newsreader', serif;
+    font-size:58px;
+    font-weight:600;
+    line-height:1;
+  }
+  .score-num.good{color:var(--accent);}
+  .score-num.mid{color:var(--gold);}
+  .score-num.bad{color:var(--warn);}
+  .score-label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin-top:4px;
+  }
+  .verdict{
+    font-family:'Newsreader', serif;
+    font-style:italic;
+    font-size:16px;
+    color:var(--ink-soft);
+    max-width:34ch;
+    text-align:right;
+  }
+  .section{padding:20px 24px;border-bottom:1px solid var(--line);}
+  .section:last-child{border-bottom:none;}
+  .section-title{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin-bottom:12px;
+  }
+  .item{display:flex;gap:12px;padding:8px 0;font-size:14.5px;line-height:1.5;}
+  .mark{font-family:'IBM Plex Mono', monospace;font-size:13px;flex-shrink:0;width:18px;}
+  .mark.pass{color:var(--accent);}
+  .mark.warn{color:var(--warn);}
+  .keywords{display:flex;flex-wrap:wrap;gap:8px;}
+  .kw{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    padding:4px 10px;
+    border:1px solid var(--line);
+    border-radius:2px;
+    color:var(--ink-soft);
+  }
+  .kw.hit{border-color:var(--accent);color:var(--accent);}
+  .kw.missing{border-color:var(--warn);color:var(--warn);}
+  .match-bar-wrap{margin-top:6px;}
+  .match-bar-track{height:6px;background:var(--paper-dim);border-radius:3px;overflow:hidden;}
+  .match-bar-fill{height:100%;background:var(--accent);border-radius:3px;transition:width 0.6s ease;}
+  .match-pct{font-family:'IBM Plex Mono', monospace;font-size:12px;color:var(--ink-soft);margin-top:6px;}
+
+  .error-box{
+    display:none;margin-top:20px;padding:16px 20px;
+    border:1px solid var(--warn);color:var(--warn);
+    font-size:13.5px;border-radius:2px;
+  }
+  .error-box.show{display:block;}
+  footer{
+    margin-top:60px;padding-top:20px;border-top:1px solid var(--line);
+    font-family:'IBM Plex Mono', monospace;font-size:11.5px;
+    color:var(--ink-soft);letter-spacing:0.02em;line-height:1.7;
+  }
+  @media (max-width:640px){
+    h1{font-size:32px;}
+    .two-col{grid-template-columns:1fr;}
+    .report-head{flex-direction:column;gap:16px;}
+    .verdict{text-align:left;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow"><span class="dot"></span>Scanline · Two-layer resume check</div>
+    <h1>What a machine parses.<br><em>What a recruiter reads.</em></h1>
+    <p class="sub">Paste your resume and the job description. You get two separate reports: a mechanical ATS parse check (deterministic, same every time) and an AI recruiter-style read (judgment-based, clearly labeled as such).</p>
+  </header>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="field-label"><span>Resume text</span><span id="charcount">0 chars</span></div>
+      <textarea id="resumeInput" placeholder="Paste your resume — summary, skills, experience, education."></textarea>
+    </div>
+    <div class="panel">
+      <div class="field-label"><span>Job description</span><span id="jdcount">0 chars</span></div>
+      <textarea id="jdInput" placeholder="Paste the job description you're applying to. This drives the keyword-match layer."></textarea>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px;">
+    <input class="role-input" id="roleInput" placeholder="Role title (optional) — e.g. Software Engineer Intern">
+  </div>
+
+  <div class="actions">
+    <span class="hint">Nothing is stored server-side. Each scan runs fresh.</span>
+    <button class="scan-btn" id="scanBtn">Run scan</button>
+  </div>
+
+  <div class="error-box" id="errorBox"></div>
+
+  <div class="panel scan-area" id="scanArea">
+    <div class="beam" id="beam"></div>
+    <div style="padding:40px 24px;text-align:center;font-family:'IBM Plex Mono', monospace;font-size:12.5px;color:var(--ink-soft);letter-spacing:0.08em;text-transform:uppercase;" id="scanStatus">Running recruiter read…</div>
+  </div>
+
+  <!-- LAYER 1: Mechanical ATS parse -->
+  <div class="layer" id="layerMechanical">
+    <div class="layer-tag"><span class="badge mechanical">Deterministic</span>ATS Parse Check</div>
+    <p class="layer-note">Rule-based, no AI — this replicates what real ATS software mechanically checks: detectable contact info, standard section headers, and literal keyword overlap with the job description. Same resume always gives the same result here.</p>
+    <div class="panel">
+      <div class="report-head">
+        <div>
+          <div class="score-num" id="mechScore">—</div>
+          <div class="score-label">Parse score</div>
+        </div>
+        <div class="verdict" id="mechVerdict"></div>
+      </div>
+      <div class="section">
+        <div class="section-title">Detected fields</div>
+        <div id="mechFields"></div>
+      </div>
+      <div class="section">
+        <div class="section-title">Section headers found</div>
+        <div id="mechSections"></div>
+      </div>
+      <div class="section">
+        <div class="section-title">Keyword match vs. job description</div>
+        <div class="match-bar-wrap">
+          <div class="match-bar-track"><div class="match-bar-fill" id="matchBarFill" style="width:0%;"></div></div>
+          <div class="match-pct" id="matchPct"></div>
+        </div>
+        <div class="keywords" id="mechKeywords" style="margin-top:14px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LAYER 2: AI recruiter read -->
+  <div class="layer" id="layerAI">
+    <div class="layer-tag"><span class="badge ai">AI judgment</span>Recruiter-Style Read</div>
+    <p class="layer-note">This is an LLM's opinion, not a measurement — treat it as one experienced reader's take, not a precise score. Useful for direction, not as a pass/fail gate.</p>
+    <div class="panel">
+      <div class="report-head">
+        <div>
+          <div class="score-num" id="aiScore">—</div>
+          <div class="score-label">Overall impression</div>
+        </div>
+        <div class="verdict" id="aiVerdict"></div>
+      </div>
+      <div class="section">
+        <div class="section-title">Content strength</div>
+        <div id="aiContent"></div>
+      </div>
+      <div class="section">
+        <div class="section-title">Top fixes</div>
+        <div id="aiFixes"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Scanline — built for students, by a student.<br>
+    The parse check is mechanical and consistent. The recruiter read is AI-generated judgment and will vary — use it for direction, not as a verdict.
+  </footer>
+</div>
+
+<script>
+const scanBtn = document.getElementById('scanBtn');
+const resumeInput = document.getElementById('resumeInput');
+const jdInput = document.getElementById('jdInput');
+const roleInput = document.getElementById('roleInput');
+const charcount = document.getElementById('charcount');
+const jdcount = document.getElementById('jdcount');
+const errorBox = document.getElementById('errorBox');
+const scanArea = document.getElementById('scanArea');
+const beam = document.getElementById('beam');
+const layerMechanical = document.getElementById('layerMechanical');
+const layerAI = document.getElementById('layerAI');
+
+resumeInput.addEventListener('input', () => charcount.textContent = resumeInput.value.length + ' chars');
+jdInput.addEventListener('input', () => jdcount.textContent = jdInput.value.length + ' chars');
+
+scanBtn.addEventListener('click', runScan);
+
+// ---------- LAYER 1: deterministic ATS parse (runs entirely client-side, no AI) ----------
+const STOPWORDS = new Set(['the','and','a','an','to','of','in','for','on','with','is','are','as','at','by','be','this','that','it','from','or','will','you','your','we','our','role','job','team','experience','years','work','working','ability','including','etc']);
+
+function extractKeywords(text, max){
+  const words = text.toLowerCase().match(/[a-z][a-z+.#-]{1,}/g) || [];
+  const freq = {};
+  words.forEach(w => {
+    if(STOPWORDS.has(w) || w.length < 3) return;
+    freq[w] = (freq[w] || 0) + 1;
+  });
+  return Object.entries(freq).sort((a,b) => b[1]-a[1]).slice(0, max).map(e => e[0]);
+}
+
+function runMechanicalCheck(resume, jd){
+  const fields = [
+    { label: 'Email address', pass: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(resume) },
+    { label: 'Phone number', pass: /(\+?\d[\d\-\s()]{8,}\d)/.test(resume) },
+    { label: 'LinkedIn or portfolio URL', pass: /(linkedin\.com|github\.com|http[s]?:\/\/)/i.test(resume) },
+  ];
+
+  const sectionPatterns = {
+    'Experience': /\b(experience|employment|work history)\b/i,
+    'Education': /\beducation\b/i,
+    'Skills': /\bskills\b/i,
+    'Projects': /\bprojects?\b/i,
+    'Summary/Objective': /\b(summary|objective|profile)\b/i,
+  };
+  const sections = Object.entries(sectionPatterns).map(([label, re]) => ({ label, pass: re.test(resume) }));
+
+  let matchPct = null;
+  let hitKeywords = [];
+  let missKeywords = [];
+  if(jd && jd.trim().length > 40){
+    const jdKeywords = extractKeywords(jd, 20);
+    const resumeLower = resume.toLowerCase();
+    jdKeywords.forEach(k => {
+      if(resumeLower.includes(k)) hitKeywords.push(k);
+      else missKeywords.push(k);
+    });
+    matchPct = jdKeywords.length ? Math.round((hitKeywords.length / jdKeywords.length) * 100) : null;
+  }
+
+  const fieldScore = fields.filter(f => f.pass).length / fields.length;
+  const sectionScore = sections.filter(s => s.pass).length / sections.length;
+  const kwScore = matchPct !== null ? matchPct / 100 : 0.7;
+  const overall = Math.round((fieldScore*0.25 + sectionScore*0.35 + kwScore*0.4) * 100);
+
+  return { fields, sections, matchPct, hitKeywords, missKeywords, overall };
+}
+
+function renderMechanical(r){
+  const scoreEl = document.getElementById('mechScore');
+  scoreEl.textContent = r.overall;
+  scoreEl.className = 'score-num ' + (r.overall >= 75 ? 'good' : r.overall >= 50 ? 'mid' : 'bad');
+  document.getElementById('mechVerdict').textContent =
+    r.overall >= 75 ? 'Parses cleanly — an ATS should read this correctly.' :
+    r.overall >= 50 ? 'Mostly parseable, some gaps to close.' :
+    'Meaningful parse risk — an ATS may misread key sections.';
+
+  document.getElementById('mechFields').innerHTML = r.fields.map(f =>
+    `<div class="item"><span class="mark ${f.pass?'pass':'warn'}">${f.pass?'✓':'!'}</span><span>${f.label} ${f.pass ? 'detected' : 'not detected'}</span></div>`
+  ).join('');
+
+  document.getElementById('mechSections').innerHTML = r.sections.map(s =>
+    `<div class="item"><span class="mark ${s.pass?'pass':'warn'}">${s.pass?'✓':'!'}</span><span>"${s.label}" ${s.pass ? 'header found' : 'header not found'}</span></div>`
+  ).join('');
+
+  if(r.matchPct !== null){
+    document.getElementById('matchBarFill').style.width = r.matchPct + '%';
+    document.getElementById('matchPct').textContent = r.matchPct + '% of top job-description keywords found in resume';
+    const kwHtml = r.hitKeywords.map(k => `<span class="kw hit">${k}</span>`).join('') +
+                   r.missKeywords.map(k => `<span class="kw missing">+ ${k}</span>`).join('');
+    document.getElementById('mechKeywords').innerHTML = kwHtml;
+  } else {
+    document.getElementById('matchBarFill').style.width = '0%';
+    document.getElementById('matchPct').textContent = 'Paste a job description above to enable real keyword matching.';
+    document.getElementById('mechKeywords').innerHTML = '';
+  }
+
+  layerMechanical.classList.add('show');
+}
+
+// ---------- LAYER 2: AI recruiter read (via backend -> Groq) ----------
+async function runAICheck(resume, jd, role){
+  const response = await fetch('/api/scan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resume, jd, role })
+  });
+  const parsed = await response.json();
+  if(!response.ok) throw new Error(parsed.error || 'AI read failed');
+  return parsed;
+}
+
+function renderAI(data){
+  const scoreEl = document.getElementById('aiScore');
+  scoreEl.textContent = data.score;
+  scoreEl.className = 'score-num ' + (data.score >= 75 ? 'good' : data.score >= 50 ? 'mid' : 'bad');
+  document.getElementById('aiVerdict').textContent = data.verdict;
+
+  document.getElementById('aiContent').innerHTML = data.content.map(i =>
+    `<div class="item"><span class="mark ${i.pass?'pass':'warn'}">${i.pass?'✓':'!'}</span><span>${escapeHtml(i.text)}</span></div>`
+  ).join('');
+
+  document.getElementById('aiFixes').innerHTML = data.fixes.map((f, idx) =>
+    `<div class="item"><span class="mark" style="color:var(--ink-soft);">${idx+1}.</span><span>${escapeHtml(f)}</span></div>`
+  ).join('');
+
+  layerAI.classList.add('show');
+}
+
+async function runScan(){
+  const resume = resumeInput.value.trim();
+  const jd = jdInput.value.trim();
+  const role = roleInput.value.trim();
+  errorBox.classList.remove('show');
+  layerMechanical.classList.remove('show');
+  layerAI.classList.remove('show');
+
+  if(resume.length < 80){
+    errorBox.textContent = 'Paste more of your resume — at least a few sentences — so the scan has enough to work with.';
+    errorBox.classList.add('show');
+    return;
+  }
+
+  // Layer 1 runs instantly, client-side
+  const mech = runMechanicalCheck(resume, jd);
+  renderMechanical(mech);
+  layerMechanical.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Layer 2 runs via backend
+  scanBtn.disabled = true;
+  scanBtn.textContent = 'Scanning…';
+  scanArea.style.display = 'block';
+  beam.classList.add('active');
+
+  try{
+    const aiData = await runAICheck(resume, jd, role);
+    renderAI(aiData);
+  } catch(err){
+    console.error(err);
+    errorBox.textContent = 'The recruiter-read layer couldn\'t complete. The parse check above is still valid.';
+    errorBox.classList.add('show');
+  } finally {
+    scanBtn.disabled = false;
+    scanBtn.textContent = 'Run scan';
+    beam.classList.remove('active');
+    scanArea.style.display = 'none';
+  }
+}
+
+function escapeHtml(str){
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>
